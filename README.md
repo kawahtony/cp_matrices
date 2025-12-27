@@ -1,36 +1,25 @@
-cpSurf: Surface Computing using the Closest Point Method
-========================================================
-Matlab and Python implementations of the Closest Point Method.
+# cp_matrices (fork) + extensions
 
-For more information and publications about the Closest Point Method, see
+This repository is a fork of `cp_matrices` with additional code and examples developed for one or more research projects.
 
-http://people.maths.ox.ac.uk/macdonald/closestpoint
+## Upstream / fork information
 
+Forked from: `cp_matrices` by Colin Macdonald  
+Upstream repository: https://github.com/cbm755/cp_matrices  
+Upstream commit originally forked from: `9ea6d3c2af7c77356fc6057257f425550c48ab9b`
 
-# Status
+## What is in this repo?
 
-This is work in process, so the usual disclaimers apply.
+- Upstream code from `cp_matrices`
+- Project- and paper-specific additions in subfolders (see below)
 
-TODO: start a list of contributors
+## Project / paper folders
 
-TODO: add a reference to cite if one uses this
+- `example_GBC/` — code for boundary-condition extensions used in Paper 1 (see “Related papers”)
 
+## Related papers
 
-# Other people's code
-
-readply:
-    MATLAB functions to read and write 3D data PLY files
-    by Pascal Getreuer, 2004.  License: unknown.
-    This code doesn't seem to work in Octave but I haven't
-    tried to fix it.
-
-ba_interp:
-    fast matlab interpolation (not currently included in this
-    code, but very useful).
-
-surfaces:
-    Some surface triangulations are included in surfaces/tri/
-    Each should have a README file associated with it.
-    These are mostly from Aim@Shape and probably have their own licenses.
-
-
+1) **The Closest Point Method for Surface PDEs with General Boundary Conditions** (Wong, Macdonald, Lee, 2025)  
+   Paper: https://arxiv.org/abs/2511.17820  
+   Code: `example_GBC/`  
+   (optional) Repro tag: `paper-gbc-v1` or branch: `paper/gbc`
