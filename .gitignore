@@ -22,3 +22,6 @@ python/build
 *.tar
 *.tar.gz
 *.zip
+*.off
+*.mp4
+*.pdf
