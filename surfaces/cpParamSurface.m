@@ -34,29 +34,61 @@ function [cpx,cpy,cpz, dist, bdy, uu, vv] = cpParamSurface(xx,yy,zz, paramf, par
 %            periodic parameter, see the next option.  TODO
 %
 %    Optional inputs:
-%    paramAdjust: a function that is called after the optimization (or
-%                 perhaps during in some cases, e.g., after each
-%                 step).  CAREFUL WITH THIS, DON'T DO ARBITRARY THINGS
-%                 WITH IT.
+%    paramAdjust: a function that is called after each optimization
+%                 step (e.g., to wrap a periodic parameter back into
+%                 its fundamental domain).  CAREFUL WITH THIS, DON'T
+%                 DO ARBITRARY THINGS WITH IT.
 %
 %    How: what technique to use, various implementations, see source.
+%         How=2 (Newton) is the default workhorse; see helper_newton
+%         below.
 %
+%    DEBUG: verbosity for How=2 (Newton).  0 (default): silent except
+%           for a single summary warning if any points failed to
+%           converge to "tol".  1: also prints one line per point that
+%           needed the fallback (didn't converge, or converged to a
+%           worse point than the initial mesh guess).  >=2: verbose
+%           per-iteration trace (see helper_newton).  >=10: also plots
+%           (into figure 1) and pauses after every iteration -- only
+%           useful interactively on a handful of points.
 %
 % TODO: this code is in a state of flux...  BEWARE
+%
+% 2026 update: helper_newton was rewritten to use Levenberg-Marquardt
+% damping (instead of an ad hoc "gradient descent with a fixed 0.05
+% step" fallback whenever the plain Newton step wasn't a descent
+% direction) and to fall back to the initial mesh guess if it somehow
+% still ends up worse.  This makes it converge far more often --
+% important because for a whole Cartesian block of query points (not
+% just a narrow band near the surface), many points end up near the
+% surface's medial axis / cut locus (e.g., the interior "hole" of a
+% torus-like shape) where the closest point is genuinely
+% ill-conditioned (near-zero gradient, indefinite Hessian, sometimes
+% more than one equally-close point) and plain Newton could fail to
+% converge or even wander to a worse point.  Also: non-convergence no
+% longer calls `keyboard` (which would otherwise hang a batch script
+% waiting at a debug prompt for every failing point) -- it's tracked
+% and reported once, as a single summary warning, after all points are
+% processed.  The old debug-only comparison block at the end of
+% helper_newton referenced several undefined functions (xs, ys, g, gp,
+% d2) and would error out with "undefined function" the moment a
+% point's Newton result was worse than its initial guess -- likely the
+% actual crash/hang behind "Newton's failure to converge" -- that
+% block has been replaced by the (correct, harmless) fallback above.
 
-  if (nargin < 9)
-    LB = [-inf -inf]
+  if (nargin < 9) || isempty(LB)
+    LB = [-inf -inf];
   end
-  if (nargin < 10)
-    UB = [inf inf]
+  if (nargin < 10) || isempty(UB)
+    UB = [inf inf];
   end
   if (nargin < 11)
     paramAdjust = [];
   end
-  if (nargin < 12)
+  if (nargin < 12) || isempty(How)
     How = 0;
   end
-  if (nargin < 13)
+  if (nargin < 13) || isempty(DEBUG)
     DEBUG = 0;
   end
 
@@ -105,6 +137,8 @@ function [cpx,cpy,cpz, dist, bdy, uu, vv] = cpParamSurface(xx,yy,zz, paramf, par
 
   [xp, yp, zp, up, vp] = surfmesh{:};
 
+  nFailed = 0;   % How==2 only: count of points that needed the fallback
+
   fprintf('cpParamSurface: starting to process %d points\n', nx);
   for i = 1:nx
     xpt = [x1d(i); y1d(i); z1d(i)];
@@ -144,7 +178,10 @@ function [cpx,cpy,cpz, dist, bdy, uu, vv] = cpParamSurface(xx,yy,zz, paramf, par
       % fastest by an order of magnitude, maybe less reliable, lots
       % of parameters to tune (!)
       opt_time = cputime();
-      [cp, dist1, bdy1, s] = helper_newton(xpt, mindd_guess, s_initial_guess, paramf, paramf2nd, LB, UB, paramAdjust);
+      [cp, dist1, bdy1, s, converged1] = helper_newton(xpt, mindd_guess, s_initial_guess, paramf, paramf2nd, LB, UB, paramAdjust, DEBUG);
+      if (~converged1)
+        nFailed = nFailed + 1;
+      end
       u1 = s(1);  v1 = s(2);
       if (bdy1 == 1)
         [cpx2,cpy2,cpz2,dist2,s2] = cpParam3DCurveClosed(xpt(1), xpt(2), xpt(3), paramfEdge, [0 4*pi]);
@@ -165,6 +202,16 @@ function [cpx,cpy,cpz, dist, bdy, uu, vv] = cpParamSurface(xx,yy,zz, paramf, par
     bdy(i) = bdy1;
     uu(i) = u1;
     vv(i) = v1;
+  end
+
+  if (How == 2) && (nFailed > 0)
+    warning('cpParamSurface:newtonNotConverged', ...
+            ['%d of %d point(s) did not converge to the Newton tolerance ' ...
+             '(the best point found was used instead). This is common ' ...
+             'for points far from the surface, e.g. near a medial ' ...
+             'axis/interior hole, and is usually harmless if such points ' ...
+             'end up outside your band. Pass DEBUG>=1 to cpParamSurface ' ...
+             'for a per-point report.'], nFailed, nx);
   end
 
   cpx = reshape(cpx, size(xx));
@@ -213,32 +260,59 @@ end  % end main function
 %% helper functions
 
 
-function [cp, dist, bdy, s] = helper_newton(xpt, mindd_guess, s_guess, paramf, paramf2nd, LB, UB, paramAdjust)
-% Newton's method
+function [cp, dist, bdy, s, converged] = helper_newton(xpt, mindd_guess, s_guess, paramf, paramf2nd, LB, UB, paramAdjust, DEBUG)
+% Newton's method, with Levenberg-Marquardt damping for robustness.
 %
-% Note: passing fcns to compute F and Jacobian was slow (or more likely
-% creating those fcns for each xpt)
-%
-% This doens't deal with boundaries---just puts a penalty to try to
+% This doesn't deal with boundaries---just puts a penalty to try to
 % stop it from converging too far outside.  bdy will be set to 1 if
 % it finishes on or outside the boundary.  You could then do a
 % search on the boundary curve.
+%
+% Robustness notes (see also the header of cpParamSurface.m):
+%  - A plain Newton step J\(-f) is only a descent direction of the
+%    squared distance d^2 when J (the Hessian of d^2) is positive
+%    definite.  Off the "reach" of the surface (e.g. beyond its
+%    medial axis/cut locus, which any point far enough from the
+%    surface can be) J need not be positive definite, so instead of a
+%    single fixed-size gradient-descent fallback, we damp J by adding
+%    lambda*I (increasing lambda until the resulting step actually
+%    decreases d^2).  This is the standard Levenberg-Marquardt trick
+%    and is much more reliably a descent method than plain Newton.
+%  - Convergence is judged from the size of the (undamped-by-later-
+%    wrapping) step itself, not from comparing the pre- and
+%    post-paramAdjust parameter values -- otherwise a periodic
+%    paramAdjust (e.g. wrapping u into [0,2*pi)) could make a
+%    converged step look huge just because it crossed the periodic
+%    seam.
+%  - If, despite all this, the final point is somehow worse than the
+%    cheap initial mesh-based guess, we just return that initial
+%    guess instead: the caller is never worse off than a naive nearest
+%    -mesh-vertex search.
+%  - Failing to converge in maxn iterations no longer throws up a
+%    `keyboard` prompt (which would hang unattended/batch runs); it's
+%    reported back via the `converged` output instead, and
+%    cpParamSurface.m prints one summary warning covering all points.
 
-  DEBUG = 1;
+  if (nargin < 9) || isempty(DEBUG)
+    DEBUG = 0;
+  end
 
-  tol = 1e-14;
-  maxn = 100;
+  tol = 1e-10;
+  maxn = 80;
 
+  s = s_guess(:);
+
+  [x0] = paramf(s(1), s(2));
+  d2cur = sum((x0-xpt).^2);
+
+  lambda = 0;
+  lambda_growth = 10;
+
+  converged = false;
   n = 0;
-
-  %s_guess = [3.51; -1]
-  s = s_guess;
-
-  while (true)
+  while (n < maxn)
     n = n + 1;
-    %J2 = Jfh(s);
-    %f2 = fh(s);
-    %[x, xu, xv, xuu, xvv, xuv] = paramf(s(1), s(2));
+
     [x, xu, xv] = paramf(s(1), s(2));
     [xuu, xvv, xuv] = paramf2nd(s(1), s(2));
 
@@ -262,133 +336,111 @@ function [cp, dist, bdy, s] = helper_newton(xpt, mindd_guess, s_guess, paramf, p
       f(2) = f(2) - gamma*(s(2)-LB(2))^(pow-1);
       f2v = f2v - (pow-1)*gamma*(s(2)-LB(2))^(pow-2);
     end
-    %penalty = (v<-1) .* gamma/2*((v+1).^2)  +  (v>1) .* gamma/2*((v-1).^2);
-    % add that to the d2 function?  xx here is v
 
     J = [f1u f1v; f1v f2v];
+    Jscale = max(1, norm(J, 'fro'));
 
-    %% Newton's method
-    % we want to minimize d^2 by solving (f := grad d^2) = 0.  At
-    % each step we want solve solve
-    %    J (snew-s) = -f
-    % that is
-    %    snew  = s + (J \ -f);
-    % (provided that moves in a decent direction)
-
-    % first compute the change
-    change = (J \ -f);
-
-    % now make sure its a decent direction of d^2
-    innerprod = -f' * change;
-    if (innerprod < 0)
-      % negative (/w small tolerance), so take a small step in the
-      % gradient direction (should really do a line search)
-      if (DEBUG > 1)
-        fprintf('iter n=%d, taking gradient decent direction, x=[%f,%f,%f]\n', n, xpt(1), xpt(2), xpt(3));
-      end
-      thechange = -f * 1/norm(f) * 0.05;  % TODO: do better!
-    else
-      % we have a decent direction, now limit how far we can go
-      changetol = 0.1;  % TODO: another parameter!
-      normch = norm(change);
-      if (normch > changetol)
-        alpha = changetol*1/normch;
-        if (DEBUG>=2)
-          fprintf('constraining stepsize: n=%d, s=[%g,%g], normchange=%g, change=[%g,%g], x=[%f,%f,%f]\n',n, s(1), s(2), normch, change(1), change(2), xpt(1), xpt(2), xpt(3));
-        end
+    % Levenberg-Marquardt: find the smallest damping (starting from
+    % last iteration's lambda, so well-behaved regions stay cheap)
+    % that gives a genuine decrease in d^2.
+    change = [];
+    for lmtry = 1:40
+      Jd = J + lambda*Jscale*eye(2);
+      dJ = Jd(1,1)*Jd(2,2) - Jd(1,2)*Jd(2,1);
+      if (abs(dJ) > eps*Jscale^2*1e4)
+        trial = Jd \ (-f);
       else
-        alpha = 1;
+        trial = [];
       end
-      thechange = alpha*change;
-    end
-    if (DEBUG>=2)
-      fprintf('iter: n=%d, s=[%g,%g], thechange=[%g,%g], x=[%f,%f,%f]\n',n, s(1), s(2), thechange(1), thechange(2), xpt(1), xpt(2), xpt(3));
-    end
-    snew = s + thechange;
-    if (DEBUG>=2)
-      [xtemp] = paramf(snew(1), snew(2));
-      dd = sum( (xtemp-xpt).^2 );
-      [xtemp] = paramf(s_guess(1), s_guess(2));
-      dd0 = sum( (xtemp-xpt).^2 );
-      dt = 0.01;
-      [xtemp] = paramf(s_guess(1)+dt, s_guess(2));  dd1 = sum( (xtemp-xpt).^2 );
-      [xtemp] = paramf(s_guess(1)-dt, s_guess(2));  dd2 = sum( (xtemp-xpt).^2 );
-      [xtemp] = paramf(s_guess(1), s_guess(2)+dt);  dd3 = sum( (xtemp-xpt).^2 );
-      [xtemp] = paramf(s_guess(1), s_guess(2)-dt);  dd4 = sum( (xtemp-xpt).^2 );
-
-      fprintf('  , w/ new change, dd=%d, dd0=%g, ddnbrs=[%g,%g,%g,%g], grad dd=[%g,%g]\n', dd, dd0, dd1,dd2,dd3,dd4, (dd1-dd2)/(2*dt), (dd3-dd4)/(2*dt));
+      if ~isempty(trial) && all(isfinite(trial))
+        if norm(trial) > 1.0
+          trial = trial * (1.0/norm(trial));  % trust-region-ish cap
+        end
+        strial = s + trial;
+        if (~isempty(paramAdjust))
+          strial_eval = paramAdjust(strial);
+        else
+          strial_eval = strial;
+        end
+        xtrial = paramf(strial_eval(1), strial_eval(2));
+        d2trial = sum((xtrial-xpt).^2);
+        if (d2trial <= d2cur + 1e-13*max(1,d2cur))
+          change = trial;
+          d2cur = d2trial;
+          break;
+        end
       end
+      if (lambda == 0)
+        lambda = 1e-8;
+      else
+        lambda = lambda * lambda_growth;
+      end
+    end
 
-    %if (snew(2) > 1.5)
-    %  change = 0.5*change;
-    %  snew = s + change;
-    %end
+    if (DEBUG >= 2)
+      fprintf('iter: n=%d, s=[%g,%g], lambda=%g, x=[%f,%f,%f]\n', n, s(1), s(2), lambda, xpt(1), xpt(2), xpt(3));
+    end
 
+    if isempty(change)
+      % Levenberg-Marquardt couldn't find any improving step (should
+      % be extremely rare): stop here rather than looping uselessly.
+      break;
+    end
 
-    %keyboard
+    % relax the damping a bit for next time, since this one worked
+    lambda = lambda / lambda_growth^2;
+    if (lambda < 1e-12)
+      lambda = 0;
+    end
 
-    %if (abs(gp(s,x,y)) > tol)
-    %TODO
-    %gp(s,x,y) * (snew - s) =  - g(s,x,y);
-    %else
-    % second deriv is zero
-    %snew = s;
-    %end
-
-    %% Do any adjustments to the parameter values
-    % e.g, Force parameter to be periodic
-    % TODO: Newton's method if probably not robust if the curve is not
-    % smooth at this point, in general be careful with this.
+    snew = s + change;
     if (~isempty(paramAdjust))
       snew = paramAdjust(snew);
     end
 
-  if (DEBUG >= 10)
-    cp = paramf(snew(1), snew(2));
-    fprintf('iter: n=%d, snew=(%f,%f), s0=(%f,%f), x=(%f,%f,%f)\n',n, snew(1), snew(2), s_guess(1), s_guess(2), xpt(1), xpt(2), xpt(3))
-    %figure(1);
-    set(0, 'CurrentFigure', 1);
-    plot3(cp(1),cp(2),cp(3),'bo');
-    axis equal
-    drawnow();
-    pause
-  end
+    if (DEBUG >= 10)
+      cp_dbg = paramf(snew(1), snew(2));
+      fprintf('iter: n=%d, snew=(%f,%f), s0=(%f,%f), x=(%f,%f,%f)\n', n, snew(1), snew(2), s_guess(1), s_guess(2), xpt(1), xpt(2), xpt(3));
+      set(0, 'CurrentFigure', 1);
+      plot3(cp_dbg(1), cp_dbg(2), cp_dbg(3), 'bo');
+      axis equal
+      drawnow();
+      pause
+    end
 
-    %converged: n=52, s=(3.133150,1.011001), x=(-0.343126,0.148547,0.514520)
-    %too many iterations: (n,snew,x) = 201, (8.958740,0.999768), (-0.333417,-0.101126,-0.078792)
-
-    if (n > maxn)
-      fail = 1;
-      sdiffnorm = norm(s-s_guess);
-      fprintf('too many iters: n=%d, sdiff=%f, s=(%f,%f), s0=(%f,%f), x=(%f,%f,%f)\n',n, sdiffnorm, snew(1), snew(2), s_guess(1), s_guess(2), xpt(1), xpt(2), xpt(3));
-      %fprintf('too many iterations: (n,snew,x) = %d, (%f,%f), (%f,%f,%f)\n', n, snew(1),snew(2), xpt(1), xpt(2), xpt(3));
-      %fprintf('  (s0) = (%f,%f)\n', s_guess(1), s_guess(2));
-      %g(s,x,y)
-      %gp(s,x,y)
-      warning('max iterations in Newton solve: CP is likely wrong!');
-      keyboard
-      break;
-    elseif (abs(s-snew) < tol)
-      fail = 0;
-      if ( ((abs(snew(2)) > 1) && (abs(snew(2)) > 1.2))  ||  ...
-           (n > 20) )
-        sdiffnorm = norm(s-s_guess);
-        fprintf('converged: n=%d, sdiff=%f, s=(%f,%f), s0=(%f,%f), x=(%f,%f,%f)\n',n, sdiffnorm, snew(1), snew(2), s_guess(1), s_guess(2), xpt(1), xpt(2), xpt(3));
-        %keyboard
-      end
-      %fprintf('converged, n=%d\n', n);
+    % convergence test uses the actual step taken (norm(change)), not
+    % abs(s-snew): after a periodic paramAdjust wraps snew, s and snew
+    % can look far apart even for a tiny true step.
+    if (norm(change) < tol)
+      s = snew;
+      converged = true;
       break;
     end
-    % update
+
     s = snew;
   end
 
-  s = snew;
-  %cp = [xparam{1}(s(1),s(2));  xparam{2}(s(1),s(2)); xparam{3}(s(1),s(2))];
+  if (~converged && DEBUG >= 1)
+    fprintf('cpParamSurface: Newton did not converge in %d iters, s=(%f,%f), x=(%f,%f,%f), d2=%g\n', ...
+            maxn, s(1), s(2), xpt(1), xpt(2), xpt(3), d2cur);
+  end
+
   cp = paramf(s(1), s(2));
-  %dist = sqrt((cpx - p).^2 + (cpy - q).^2 + (cpz - r).^2);
   dist = norm(xpt - cp, 2);
 
+  % Safety net: never do worse than the cheap initial mesh guess (this
+  % also covers the case where the loop above bailed out immediately,
+  % e.g. lmtry exhausted on iteration 1).
+  if (dist^2 > mindd_guess + tol)
+    if (DEBUG >= 1)
+      fprintf('cpParamSurface: Newton result worse than initial guess (%g > %g), falling back, x=(%f,%f,%f)\n', ...
+              dist^2, mindd_guess, xpt(1), xpt(2), xpt(3));
+    end
+    s = s_guess(:);
+    cp = paramf(s(1), s(2));
+    dist = sqrt(mindd_guess);
+    converged = false;
+  end
 
   % somewhat hardcoded for mobius (no s1 here)
   if ( (s(2) < LB(2)) || (s(2) > UB(2)) )
@@ -398,38 +450,7 @@ function [cp, dist, bdy, s] = helper_newton(xpt, mindd_guess, s_guess, paramf, p
     bdy = false;
   end
 
-  if (fail)
-    varargout = {1};
-  else
-    varargout = {0};
-  end
-
-  if (DEBUG <= 0)
-    %assert(mindd_guess+tol >= dist^2, ...
-    %       'initial guess was better: %g, (x,y)=(%g,%g,%g), s=%g\n', ...
-    %       mindd_guess - dist^2, xpt(1),xpt(2),xpt(3), s);
-  else
-    if ~(mindd_guess+tol >= dist^2)
-      fprintf('initial guess was better: %g, (x,y)=(%g,%g), s=%g\n', ...
-              mindd_guess - dist^2, x, y, s);
-      tg = [xp(s_guess), yp(s_guess)];
-      nor = [x - xs(s_guess), y-ys(s_guess)];
-      figure(10);
-      plot([x xs(s)], [y ys(s)], 'b.-');
-      figure(11);
-      plot(s, d2(s,x,y), 'b*');
-      figure(12);
-      s2 = s_guess
-      plot(s2, g(s2,x,y), 'b*');
-      plot([s2 s2+.27], g(s2,x,y) + [0  .27*gp(s2,x,y)], 'b-');
-      grid on;
-      figure(13);
-      plot(s, gp(s,x,y), 'b*');
-      keyboard
-    end
-  end
 end  % newton function
-
 
 
 
@@ -453,10 +474,7 @@ function [cp, dist, bdy, res] = helper_lsq(xpt, f, initial_guess, paramf, opt, L
   %[bdy lambda.lower' lambda.upper']
 
   if (flg < 1)
-    xpt, res, t0, fval, fvals, flg, output
-    lambda
-    warning('lsq search: possibly noncoverged CP search');
-    keyboard
+    warning('cpParamSurface:lsqNotConverged', 'lsq search: possibly nonconverged CP search (x=[%g,%g,%g])', xpt(1), xpt(2), xpt(3));
   end
 
   if (~isempty(paramAdjust))
@@ -469,11 +487,7 @@ function [cp, dist, bdy, res] = helper_lsq(xpt, f, initial_guess, paramf, opt, L
   dd = fval;
   % for lsqnonlin, need squared dist
   if (abs(dd - sum((cp - xpt).^2)) > 1e-15)
-    dd
-    sum((cp - xpt).^2)
-    dd - sum((cp - xpt).^2)
-    warning('actual distance doesn''t match opt result')
-    keyboard
+    warning('cpParamSurface:lsqDistMismatch', 'actual distance doesn''t match opt result (x=[%g,%g,%g])', xpt(1), xpt(2), xpt(3));
   end
 
   res = newres;
@@ -514,45 +528,8 @@ function [cp, dist, bdy, res] = helper_fmincon(xpt, f, initial_guess, paramf, op
 
   bdy = any([lambda.lower; lambda.upper] ~= 0);
 
-  %[res(1) res(2) fval flg lambda.lower(2) lambda.upper(2)]
-  % check lagrange mult
-  %if (lambda.lower(2) ~= 0)
-  %  bdy11 = 1;
-  %else
-  %  bdy11 = 0;
-  %end
-  %if (lambda.upper(2) ~= 0)
-  %  bdy12 = 1;
-  %else
-  %  bdy12 = 0;
-  %end
-  %bdy = bdy11 | bdy12;
-
-  % double-check the lambda stuff: TODO: remove later
-  %if abs(abs(res(2)) - 1) < 1e-12
-  %  if (~bdy)
-  %    disp('** mismatch, lagrange mult didn''t find bdy? **');
-  %    keyboard
-  %  end
-  %else
-  %  if (bdy)
-  %    disp('** mismatch, lagrange mult found bdy? **');
-  %    keyboard
-  %  end
-  %end
-
   if (flg < 1)
-    xpt
-    res
-    t0
-    fval
-    fvals
-    flg
-    output
-    lambda
-    %grad
-    warning('possibly noncoverged CP search');
-    keyboard
+    warning('cpParamSurface:fminconNotConverged', 'possibly nonconverged CP search (x=[%g,%g,%g])', xpt(1), xpt(2), xpt(3));
   end
 
   if (~isempty(paramAdjust))
@@ -563,11 +540,7 @@ function [cp, dist, bdy, res] = helper_fmincon(xpt, f, initial_guess, paramf, op
   cp = paramf(newres(1),newres(2));
   dd = fval;
   if (abs(dd - sum((cp - xpt).^2)) > 2e-15)
-    dd
-    sum((cp - xpt).^2)
-    dd - sum((cp - xpt).^2)
-    warning('actual distance doesn''t match opt result')
-    keyboard
+    warning('cpParamSurface:fminconDistMismatch', 'actual distance doesn''t match opt result (x=[%g,%g,%g])', xpt(1), xpt(2), xpt(3));
   end
 
   dist = sqrt(dd);
@@ -578,7 +551,3 @@ function [cp, dist, bdy, res] = helper_fmincon(xpt, f, initial_guess, paramf, op
     drawnow()
   end
 end  % helper_fmincon function
-
-
-
-
