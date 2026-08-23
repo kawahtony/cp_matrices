@@ -3,21 +3,6 @@
 clear ; clc; close all 
 
 
-%% Load triangular mesh
-
-[vertices, faces] = read_off('data/wavy_torus.off') ;
-
-figure(1) ; clf ; hold on ;
-trisurf(faces, vertices(:,1), vertices(:,2), vertices(:,3), 'FaceColor',[0.2 0.5 0.9], 'EdgeColor','none');
-axis equal
-camlight
-lighting gouraud
-
-temp = xlim ; xmin = temp(1) ; xmax = temp(2) ;
-temp = ylim ; ymin = temp(1) ; ymax = temp(2) ;
-temp = zlim ; zmin = temp(1) ; zmax = temp(2) ;
-
-
 %% Cartesian mesh in the embedding space
 
 dx = 0.025 ; % Grid size
@@ -29,9 +14,9 @@ order = 2 ; % Differentiation order
 % bw = 1 + sqrt(dim)*(q+1)/2 ; % Bandwidth coefficient
 bw = 1.0001*sqrt((dim-1)*((q+1)/2)^2 + ((order/2+(q+1)/2)^2));
 
-xmin = xmin - 0.2 ; xmax = xmax + 0.2 ;
-ymin = ymin - 0.2 ; ymax = ymax + 0.2 ;
-zmin = zmin - 0.2 ; zmax = zmax + 0.2 ;
+xmin = -4.253534028834616 ; xmax = 4.618790628834616 ;
+ymin = -2.881089195000000 ; ymax = 2.881089195000000 ;
+zmin = -1.093696398333333 ; zmax = 1.093696398333333 ;
 
 x1d = (xmin:dx:xmax)' ; 
 y1d = (ymin:dx:ymax)' ;
