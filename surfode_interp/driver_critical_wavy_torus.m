@@ -11,27 +11,12 @@ load('data/wavy_torus_dx=0.025.mat') ;
 %% Compute mean curvature (use unit outward normal)
 
 % % Differentiation and interpolation matrices
-% [Dxc, Dyc, Dzc] = firstderiv_cen2_3d_matrices(x1d, y1d, z1d, band) ;
-% Emat = interp3_matrix(x1d, y1d, z1d, cpx_band, cpy_band, cpz_band, q, band);
-% 
-% H = wavyTorusMeanCurvature(uu_band, vv_band) ;
-
-% Differentiation and interpolation matrices
-Lmat = laplacian_3d_matrix(x1d, y1d, z1d, 2, band);
 [Dxc, Dyc, Dzc] = firstderiv_cen2_3d_matrices(x1d, y1d, z1d, band) ;
 Emat = interp3_matrix(x1d, y1d, z1d, cpx_band, cpy_band, cpz_band, q, band);
 
-% Discretized laplacian of closest point functions
-Lcpx = Emat * (Lmat * cpx_band) ; 
-Lcpy = Emat * (Lmat * cpy_band) ; 
-Lcpz = Emat * (Lmat * cpz_band) ; 
+H = wavyTorusMeanCurvature(uu_band, vv_band) ;
 
-H = zeros(size(band)) ;
-for k = 1:length(band)
-    H(k) = -dot([Lcpx(k); Lcpy(k); Lcpz(k)], [nx(k); ny(k); nz(k)]) ;
-end
-
-H = Emat * H ; 
+% H = Emat * H ; 
 
 
 %% Define velocity field
@@ -141,7 +126,11 @@ for k = 1:numpt
         if norm(x - xproj) > dx/sqrt(2)
             x = xproj ; 
         end
-        res = norm(Etemp*[fx, fy, fz], 2) ; 
+        ftemp = (Etemp*[fx, fy, fz])' ;
+        ntemp = (Etemp*[nx, ny, nz])' ;
+        ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
+        res = norm(ftemp) ;
+        % res = norm(Etemp*[fx, fy, fz], 2) ; 
 
         % Update cfl constant
         cfl_constant = max(1, norm(Etemp*[fx, fy, fz], 1)) ; 
