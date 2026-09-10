@@ -10,23 +10,25 @@ load('data/wavy_torus_dx=0.025.mat') ;
 
 %% Compute mean curvature (use unit outward normal)
 
-% Differentiation and interpolation matrices
-Lmat = laplacian_3d_matrix(x1d, y1d, z1d, 2, band);
+% % Differentiation and interpolation matrices
+% Lmat = laplacian_3d_matrix(x1d, y1d, z1d, 2, band);
 [Dxc, Dyc, Dzc] = firstderiv_cen2_3d_matrices(x1d, y1d, z1d, band) ;
 Emat = interp3_matrix(x1d, y1d, z1d, cpx_band, cpy_band, cpz_band, q, band);
+% 
+% % Discretized laplacian of closest point functions
+% Lcpx = Emat * (Lmat * cpx_band) ; 
+% Lcpy = Emat * (Lmat * cpy_band) ; 
+% Lcpz = Emat * (Lmat * cpz_band) ; 
+% 
+% H = zeros(size(band)) ;
+% for k = 1:length(band)
+%     H(k) = -dot([Lcpx(k); Lcpy(k); Lcpz(k)], [nx(k); ny(k); nz(k)]) ;
+% end
+% 
+% H = Emat * H ; 
 
-% Discretized laplacian of closest point functions
-Lcpx = Emat * (Lmat * cpx_band) ; 
-Lcpy = Emat * (Lmat * cpy_band) ; 
-Lcpz = Emat * (Lmat * cpz_band) ; 
-
-H = zeros(size(band)) ;
-for k = 1:length(band)
-    H(k) = -dot([Lcpx(k); Lcpy(k); Lcpz(k)], [nx(k); ny(k); nz(k)]) ;
-end
-
+H = wavyTorusMeanCurvature(uu_band, vv_band) ;
 H = Emat * H ; 
-
 
 %% Define velocity field
 
@@ -34,7 +36,7 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-kappa = 1 ; 
+kappa = -1 ; 
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
@@ -51,23 +53,32 @@ end
 
 %% Initialize plot 
 
-xp = vertices(:,1) ;
-yp = vertices(:,2) ;
-zp = vertices(:,3) ;
+[up, vp] = meshgrid(linspace(0,2*pi, 300)) ;
 
-Eplot = interp3_matrix(x1d, y1d, z1d, xp, yp, zp, q, band) ;
+xp  = ((169*cos(2*up + 3*vp)/2500 + 13/25).*cos(vp) + 6*cos(5*up)/25 + 41/20).*cos(up) ;
+          
+yp = ((169*cos(2*up + 3*vp)/2500 + 13/25).*cos(vp) + 6*cos(5*up)/25 + 41/20).*sin(up) ;
+
+zp = (169*cos(2*up + 3*vp)/2500 + 13/25).*sin(vp) + 9*sin(5*up)/50 ;
+
+
+Eplot = interp3_matrix(x1d, y1d, z1d, xp(:), yp(:), zp(:), q, band) ;
 
 figure(1) ; clf ; hold on ;
-trisurf(faces, xp, yp, zp, Eplot*H, 'FaceAlpha', 0.9) ;
+
+Hp = Eplot*H ;
+Hp = reshape(Hp, size(xp)) ;
+surf(xp, yp, zp, Hp , 'FaceAlpha', 0.9) ;
 shading interp
 axis equal 
 view(3)
 
 
+
 %% Time discretization
 
 % Simulation time
-T = 20 ;
+T = 10 ;
 
 % Initial location
 x = [1.2721; -1.6560; -0.4047] ;
@@ -87,7 +98,7 @@ count = 0 ;
 cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = 1e-6 ;
+tol = norm(H, 'inf') * dx^2 ;
 
 
 %% Time-stepping
@@ -119,10 +130,10 @@ while t < T && res > tol
     %% Final Projection
     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
     xproj = ( Etemp*[cpx_band, cpy_band, cpz_band] )' ; 
-    % if norm(x - xproj) > dx/sqrt(2)
-    %     x = xproj ; 
-    % end
-    x = xproj ;
+    if norm(x - xproj) > dx/sqrt(2)
+        x = xproj ; 
+    end
+    % x = xproj ;
 
     % Update cfl constant
     cfl_constant = max(1, norm(Etemp*[fx, fy, fz], 1)) ; 
@@ -134,7 +145,15 @@ while t < T && res > tol
     t_stored(count) = t ; 
     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
     H_stored(count) = Etemp*H ;
-    res = norm(x - x0, 2) ;
+    % res = norm(x - x0, 2) ;
+    res = norm(Etemp*[fx, fy, fz]) ;
+
+    disp(['t = ', num2str(t)])
+    % norm(k1)
+    % norm(k2)
+    % norm(0.5*(k1 + k2))
+    % norm(Etemp*[fx, fy, fz])
+    % disp([''])
 
 end
 
@@ -144,4 +163,9 @@ plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
 
 
 figure(2) ; 
+plot3(x_stored(1,1), x_stored(2,1), x_stored(3,1), 'ro', 'MarkerFaceColor', 'r') ; hold on ;
+plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
+
+
+figure(3) ; 
 plot(t_stored, H_stored, 'r-', 'LineWidth', 1.5)

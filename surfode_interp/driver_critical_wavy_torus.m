@@ -10,6 +10,12 @@ load('data/wavy_torus_dx=0.025.mat') ;
 
 %% Compute mean curvature (use unit outward normal)
 
+% % Differentiation and interpolation matrices
+% [Dxc, Dyc, Dzc] = firstderiv_cen2_3d_matrices(x1d, y1d, z1d, band) ;
+% Emat = interp3_matrix(x1d, y1d, z1d, cpx_band, cpy_band, cpz_band, q, band);
+% 
+% H = wavyTorusMeanCurvature(uu_band, vv_band) ;
+
 % Differentiation and interpolation matrices
 Lmat = laplacian_3d_matrix(x1d, y1d, z1d, 2, band);
 [Dxc, Dyc, Dzc] = firstderiv_cen2_3d_matrices(x1d, y1d, z1d, band) ;
@@ -52,14 +58,22 @@ end
 
 %% Initialize plot 
 
-xp = vertices(:,1) ;
-yp = vertices(:,2) ;
-zp = vertices(:,3) ;
+[up, vp] = meshgrid(linspace(0,2*pi, 300)) ;
 
-Eplot = interp3_matrix(x1d, y1d, z1d, xp, yp, zp, q, band) ;
+xp  = ((169*cos(2*up + 3*vp)/2500 + 13/25).*cos(vp) + 6*cos(5*up)/25 + 41/20).*cos(up) ;
+          
+yp = ((169*cos(2*up + 3*vp)/2500 + 13/25).*cos(vp) + 6*cos(5*up)/25 + 41/20).*sin(up) ;
+
+zp = (169*cos(2*up + 3*vp)/2500 + 13/25).*sin(vp) + 9*sin(5*up)/50 ;
+
+
+Eplot = interp3_matrix(x1d, y1d, z1d, xp(:), yp(:), zp(:), q, band) ;
 
 figure(1) ; clf ; hold on ;
-trisurf(faces, xp, yp, zp, Eplot*H, 'FaceAlpha', 0.9) ;
+
+Hp = Eplot*H ;
+Hp = reshape(Hp, size(xp)) ;
+surf(xp, yp, zp, Hp , 'FaceAlpha', 0.9) ;
 shading interp
 axis equal 
 view(3)
@@ -68,7 +82,7 @@ view(3)
 %% Time discretization
 
 % Simulation time
-T = 10 ;
+T = 20 ;
 
 % Number of points to be explored
 numpt = 200 ;
@@ -77,13 +91,11 @@ numpt = 200 ;
 % Get random indices of closest points
 random_idx = randperm(length(band), numpt)' ;
 
-load('critical_temp_ascent.mat')
-critical_stored0 = critical_stored ;
 
 
 %% Time-stepping
 
-tol = 1e-6 ;
+tol = max(abs(H)) * dx^2 ;
 
 critical_stored = zeros(3, numpt) ;
 res_stored = zeros(1, numpt) ;
@@ -91,10 +103,9 @@ t_stored = zeros(1, numpt) ;
 
 
 for k = 1:numpt
-    
-    % idx = random_idx(k) ;
-    % x = [cpx_band(idx); cpy_band(idx); cpz_band(idx)] ;
-    x = [critical_stored0(1,k); critical_stored0(2,k); critical_stored0(3,k)] ;
+
+    idx = random_idx(k) ;
+    x = [cpx_band(idx); cpy_band(idx); cpz_band(idx)] ;
 
     % Initialize CFL condition, time and residual
     cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
@@ -102,45 +113,44 @@ for k = 1:numpt
     res = 1 ;
 
     while t < T && res > tol
-    
+
         x0 = x ;
         dt = dx / cfl_constant ;
-    
+
         if T - t < dt
             dt = T - t ;
         end
-    
+
         %% Explicit Trapezoidal (RK2) time integration
-    
+
         % Stage 1
         Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
         k1 = ( Etemp*[fx, fy, fz] )' ; 
-    
+
         % Stage 2
         xtemp = x + dt*k1 ;
         Etemp = interp3_matrix(x1d, y1d, z1d, xtemp(1), xtemp(2), xtemp(3), q, band) ; 
         k2 = ( Etemp*[fx, fy, fz] )' ; 
-    
+
         % Update from TVD-RK2
         x = x + dt*(k1/2 + k2/2) ;        
-    
+
         %% Final Projection
         Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
         xproj = ( Etemp*[cpx_band, cpy_band, cpz_band] )' ; 
-        % if norm(x - xproj) > dx/sqrt(2)
-        %     x = xproj ; 
-        % end
-        x = xproj ;
-        res = norm(x - x0, 2) ; 
+        if norm(x - xproj) > dx/sqrt(2)
+            x = xproj ; 
+        end
+        res = norm(Etemp*[fx, fy, fz], 2) ; 
 
         % Update cfl constant
         cfl_constant = max(1, norm(Etemp*[fx, fy, fz], 1)) ; 
 
         %% Update time
         t = t + dt ;
-    
+
     end
-    
+
     critical_stored(:,k) = x ;
     res_stored(k) = res ;
     t_stored(k) = t ; 
