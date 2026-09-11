@@ -36,19 +36,19 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-kappa = -1 ; 
+kappa = 1 ; 
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
 fz = kappa*Hz ; 
 
-% Project onto tangent space
-for k = 1:length(band)
-    ftemp = [fx(k); fy(k); fz(k)] ;
-    ntemp = [nx(k); ny(k); nz(k)] ;
-    ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
-    fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
-end
+% % Project onto tangent space
+% for k = 1:length(band)
+%     ftemp = [fx(k); fy(k); fz(k)] ;
+%     ntemp = [nx(k); ny(k); nz(k)] ;
+%     ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
+%     fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
+% end
 
 
 %% Initialize plot 
@@ -78,10 +78,14 @@ view(3)
 %% Time discretization
 
 % Simulation time
-T = 10 ;
+T = 20 ;
 
 % Initial location
-x = [1.2721; -1.6560; -0.4047] ;
+% x = [1.2721; -1.6560; -0.4047] ; % descent
+% x = [1.83752; 0; -0.0142673] ; % ascent
+% x = [-2.10874; -0.321765; 0.232841] ; % ascent
+x = [0.7123; 2.1638; 0.5530] ;
+
 figure(1) ; 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerFaceColor', 'r')
 
@@ -90,7 +94,10 @@ x_stored = [] ; x_stored(:,1) = x ;
 t_stored = 0 ;
 
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+
 H_stored = Etemp*H ;
+Havg_stored = Havg0 ;
+avg_count = 20  ;
 
 count = 0 ; 
 
@@ -98,7 +105,7 @@ count = 0 ;
 cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = norm(H, 'inf') * dx^2 ;
+tol = dx^2 ;
 
 
 %% Time-stepping
@@ -133,7 +140,6 @@ while t < T && res > tol
     if norm(x - xproj) > dx/sqrt(2)
         x = xproj ; 
     end
-    % x = xproj ;
 
     % Update cfl constant
     cfl_constant = max(1, norm(Etemp*[fx, fy, fz], 1)) ; 
@@ -143,17 +149,20 @@ while t < T && res > tol
     count = count + 1 ; 
     x_stored(:,count) = x ; 
     t_stored(count) = t ; 
-    Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
-    H_stored(count) = Etemp*H ;
-    % res = norm(x - x0, 2) ;
-    res = norm(Etemp*[fx, fy, fz]) ;
+
+    % Check convergence
+    if count <= avg_count
+        res = 1 ; 
+    else
+        Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+        Hval = Etemp*H ; 
+        H_stored(count) = Hval ; 
+        Havg0 = mean(H_stored(count - avg_count : count-1)) ;
+        Havg = mean(H_stored(count - avg_count + 1 : count)) ;
+        res = abs(Havg - Havg0)/max(abs(Havg), 1) ; disp(res)
+    end    
 
     disp(['t = ', num2str(t)])
-    % norm(k1)
-    % norm(k2)
-    % norm(0.5*(k1 + k2))
-    % norm(Etemp*[fx, fy, fz])
-    % disp([''])
 
 end
 
@@ -169,3 +178,12 @@ plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
 
 figure(3) ; 
 plot(t_stored, H_stored, 'r-', 'LineWidth', 1.5)
+
+Havg = zeros(size(H_stored)) ;
+
+for k = 1:length(H_stored)
+    Havg(k) = sum(H_stored(1:k)) / k ; 
+end
+
+figure(4) ; 
+plot(t_stored, Havg, 'r-', 'LineWidth', 1.5)
