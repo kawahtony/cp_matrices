@@ -25,8 +25,8 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-% kappa = 1 ; % ascent
-kappa = - 1 ;% descent
+kappa = 1 ; % ascent
+% kappa = - 1 ;% descent
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
@@ -80,13 +80,11 @@ random_idx = randperm(length(band), numpt)' ;
 
 %% Time-stepping
 
-tol = 0.1 * dx^2 ;
+tol = 0.01 * dx^2 ;
 
 critical_stored = zeros(3, numpt) ;
 res_stored = zeros(1, numpt) ;
 t_stored = zeros(1, numpt) ;
-
-
 
 
 for k = 1:numpt
@@ -131,8 +129,7 @@ for k = 1:numpt
         xproj = ( Etemp*[cpx_band, cpy_band, cpz_band] )' ; 
         if norm(x - xproj) > dx/sqrt(2)
             x = xproj ; 
-        end
-        
+        end     
 
         % Update time and count 
         count = count + 1 ;
