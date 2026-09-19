@@ -89,14 +89,13 @@ x = [0.7123; 2.1638; 0.5530] ;
 figure(1) ; 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerFaceColor', 'r')
 
-
 x_stored = [] ; x_stored(:,1) = x ;
 t_stored = 0 ;
 
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 
 H_stored = Etemp*H ;
-Havg_stored = Havg0 ;
+Havg_stored = Etemp*H ;
 avg_count = 20  ;
 
 count = 0 ; 
@@ -105,7 +104,7 @@ count = 0 ;
 cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = dx^2 ;
+tol = 0.01*dx^2 ;
 
 
 %% Time-stepping
@@ -159,6 +158,7 @@ while t < T && res > tol
         H_stored(count) = Hval ; 
         Havg0 = mean(H_stored(count - avg_count : count-1)) ;
         Havg = mean(H_stored(count - avg_count + 1 : count)) ;
+        Havg_stored(count) = Havg ; 
         res = abs(Havg - Havg0)/max(abs(Havg), 1) ; disp(res)
     end    
 
@@ -179,11 +179,6 @@ plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
 figure(3) ; 
 plot(t_stored, H_stored, 'r-', 'LineWidth', 1.5)
 
-Havg = zeros(size(H_stored)) ;
-
-for k = 1:length(H_stored)
-    Havg(k) = sum(H_stored(1:k)) / k ; 
-end
 
 figure(4) ; 
-plot(t_stored, Havg, 'r-', 'LineWidth', 1.5)
+plot(t_stored, Havg_stored, 'r-', 'LineWidth', 1.5)
