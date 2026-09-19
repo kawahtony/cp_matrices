@@ -13,7 +13,7 @@ jade = [0, 168, 107]/255 ;
 a = 1.5; % length along z
 b = 1; % length along xy plane
 
-dx = 0.05 ;
+dx = 0.0125 ;
 
 x1d = (-2.01:dx:2.01)';
 y1d = x1d;
@@ -85,13 +85,13 @@ fx = kappa * gx ;
 fy = kappa * gy ; 
 fz = kappa * gz ; 
 
-% Project onto tangent space
-for k = 1:length(band)
-    ftemp = [fx(k); fy(k); fz(k)] ;
-    ntemp = [nx(k); ny(k); nz(k)] ;
-    ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
-    fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
-end
+% % Project onto tangent space
+% for k = 1:length(band)
+%     ftemp = [fx(k); fy(k); fz(k)] ;
+%     ntemp = [nx(k); ny(k); nz(k)] ;
+%     ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
+%     fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
+% end
 
 
 %% Initialize plot
@@ -117,14 +117,26 @@ x = [-0.728223; 0.306653; 0.919361] ;
 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r')
 
-cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 
+% Initialize CFL condition, time and residual
+cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = 1e-6 ;
+tol = 0.01*dx^2 ;
 
-x_stored = x ;
-count = 1 ;
+count = 0 ;
+
+x_stored = x ; 
+t_stored = 0 ;
+
+Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+g_stored = Etemp * g ;
+gavg_stored = Etemp*g ; 
+avg_count = 20 ; 
+
+
+
+%% Time stepping
 
 while t < T && res > tol
 
@@ -155,8 +167,6 @@ while t < T && res > tol
     if norm(x - xproj) > dx/sqrt(2)
         x = xproj ; 
     end
-    % x = xproj ;
-    res = norm(x - x0, 2) ; 
 
     % Update cfl constant
     cfl_constant = max(1, norm(Etemp*[fx, fy, fz], 1)) ; 
@@ -164,16 +174,29 @@ while t < T && res > tol
     %% Update time and count
     t = t + dt ;
     count = count + 1 ;
+    x_stored(:,count) = x ; 
+    t_stored(count) = t ; 
 
-    %% Save solution
-    x_stored(:, count) = x ;
+
+    % Check convergence
+    if count <= avg_count
+        res = 1 ; 
+    else
+        Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+        gval = Etemp*g ; 
+        g_stored(count) = gval ; 
+        gavg0 = mean(g_stored(count - avg_count : count-1)) ;
+        gavg = mean(g_stored(count - avg_count + 1 : count)) ;
+        gavg_stored(count) = gavg ; 
+        res = abs(gavg - gavg0)/max(abs(gavg), 1) ; disp(res)
+    end    
+
+  
 
 
 end
 
 plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
 
-
-
-
-
+diff = norm([x_stored(1,end) - xs, x_stored(2,end) - ys, x_stored(3,end) - zs], 2) ;
+disp(diff)
