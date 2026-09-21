@@ -25,8 +25,8 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-% kappa = 1 ; % ascent
-kappa = - 1 ;% descent
+kappa = 1 ; % ascent
+% kappa = - 1 ;% descent
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
@@ -87,8 +87,6 @@ res_stored = zeros(1, numpt) ;
 t_stored = zeros(1, numpt) ;
 
 
-
-
 for k = 1:numpt
 
     idx = random_idx(k) ;
@@ -101,7 +99,7 @@ for k = 1:numpt
     res = 1 ;
     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
     H_stored = Etemp*H ;
-    avg_count = 20  ;
+    avg_count = 10  ;
 
     while t < T && res > tol
 
@@ -131,8 +129,7 @@ for k = 1:numpt
         xproj = ( Etemp*[cpx_band, cpy_band, cpz_band] )' ; 
         if norm(x - xproj) > dx/sqrt(2)
             x = xproj ; 
-        end
-        
+        end     
 
         % Update time and count 
         count = count + 1 ;
