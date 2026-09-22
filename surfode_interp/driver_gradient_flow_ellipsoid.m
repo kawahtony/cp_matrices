@@ -2,10 +2,11 @@
 
 clc ; clear ; close all ;
 
-
 azure = [0, 128, 255]/255 ;
 coral = [255, 127, 80]/255 ;
 jade = [0, 168, 107]/255 ;
+
+format long
 
 
 %% Load closest point of trefoil knot tubulbar surface
@@ -13,7 +14,7 @@ jade = [0, 168, 107]/255 ;
 a = 1.5; % length along z
 b = 1; % length along xy plane
 
-dx = 0.0125 ;
+dx = 0.08 ;
 
 x1d = (-2.01:dx:2.01)';
 y1d = x1d;
@@ -113,7 +114,7 @@ axis equal;
 % Simulation time
 T = 10 ;
 
-x = [-0.728223; 0.306653; 0.919361] ;
+x = [-0.753739; -0.237113; 0.919361] ;
 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r')
 
@@ -132,13 +133,13 @@ t_stored = 0 ;
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 g_stored = Etemp * g ;
 gavg_stored = Etemp*g ; 
-avg_count = 20 ; 
+avg_count = 10 ; 
 
 
 
 %% Time stepping
 
-while t < T && res > tol
+while t < T && res > tol 
 
     x0 = x ;
     dt = dx / cfl_constant ;
@@ -190,8 +191,6 @@ while t < T && res > tol
         gavg_stored(count) = gavg ; 
         res = abs(gavg - gavg0)/max(abs(gavg), 1) ; disp(res)
     end    
-
-  
 
 
 end
