@@ -36,7 +36,7 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-kappa = 1 ; 
+kappa = -1 ; 
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
@@ -81,10 +81,8 @@ view(3)
 T = 20 ;
 
 % Initial location
-% x = [1.2721; -1.6560; -0.4047] ; % descent
-% x = [1.83752; 0; -0.0142673] ; % ascent
-% x = [-2.10874; -0.321765; 0.232841] ; % ascent
-x = [0.7123; 2.1638; 0.5530] ;
+x = [-1.1044    1.9628   -0.5531]' ; % descent
+% x = [0.9745    1.5446   -0.5839]' ; % descent
 
 figure(1) ; 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerFaceColor', 'r')
@@ -96,8 +94,8 @@ t_stored = 0 ;
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 
 H_stored = Etemp*H ;
-Havg_stored = Havg0 ;
-avg_count = 20  ;
+Havg_stored = Etemp*H ;
+avg_count = 10  ;
 
 count = 0 ; 
 
@@ -105,7 +103,7 @@ count = 0 ;
 cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = dx^2 ;
+tol = 0.1*dx^2 ;
 
 
 %% Time-stepping
