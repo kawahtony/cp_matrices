@@ -80,7 +80,7 @@ random_idx = randperm(length(band), numpt)' ;
 
 %% Time-stepping
 
-tol = 0.1 * dx^2 ;
+tol = 0.01 * dx^2 ;
 
 critical_stored = zeros(3, numpt) ;
 res_stored = zeros(1, numpt) ;

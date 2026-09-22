@@ -3,7 +3,7 @@
 clear ; clc ; close all
 
 
-%% Discretizaiton of embedding space
+%% Discretization of embedding space
 
 % Mesh size 
 dx = 0.05 ;
@@ -105,6 +105,7 @@ k2 = zeros(3,1) ;
 k3 = zeros(3,1) ;
 k4 = zeros(3,1) ;
 
+count_proj = 0 ; 
 
 while t < T
 
@@ -133,6 +134,7 @@ while t < T
     yproj = [Etemp*cpx_band ; Etemp*cpy_band ; Etemp*cpz_band] ;
     if norm(x - yproj) > dx/sqrt(2)
         x = yproj ; 
+        count_proj = count_proj + 1 ;
     end
 
     % Update cfl constant 
@@ -154,4 +156,4 @@ end
 plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1)
 
 
-save(['results/euler_sphere/traj_', num2str(traj_id), '.mat'], 'dx', 'x_stored')
+save(['results/euler_sphere/traj_', num2str(traj_id), '.mat'], 'dx', 'x_stored', 'count_proj')
