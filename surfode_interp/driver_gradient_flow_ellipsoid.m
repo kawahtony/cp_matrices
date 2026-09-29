@@ -14,7 +14,7 @@ format long
 a = 1.5; % length along z
 b = 1; % length along xy plane
 
-dx = 0.08 ;
+dx = 0.01 ;
 
 x1d = (-2.01:dx:2.01)';
 y1d = x1d;
@@ -67,9 +67,12 @@ Emat = interp3_matrix(x1d, y1d, z1d, cpx_band, cpy_band, cpz_band, q, band);
 
 %% Define velocity field
 
-xs = -0.38897 ; 
-ys = -0.767841 ;
-zs = 0.763562 ;
+us = pi/4 ; 
+ths = pi/3 ; 
+xs = b*sin(us)*sin(ths) ; 
+ys = b*sin(us)*cos(ths) ;
+zs = a*cos(us) ;
+
 
 temp = -((xx_band - xs).^2 + (yy_band - ys).^2 + (zz_band - zs).^2) ;
 g = exp(temp/0.5^2) ;
@@ -86,13 +89,13 @@ fx = kappa * gx ;
 fy = kappa * gy ; 
 fz = kappa * gz ; 
 
-% % Project onto tangent space
-% for k = 1:length(band)
-%     ftemp = [fx(k); fy(k); fz(k)] ;
-%     ntemp = [nx(k); ny(k); nz(k)] ;
-%     ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
-%     fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
-% end
+% Project onto tangent space
+for k = 1:length(band)
+    ftemp = [fx(k); fy(k); fz(k)] ;
+    ntemp = [nx(k); ny(k); nz(k)] ;
+    ftemp = ftemp - dot(ftemp, ntemp)*ntemp ;
+    fx(k) = ftemp(1) ; fy(k) = ftemp(2) ; fz(k) = ftemp(3) ;
+end
 
 
 %% Initialize plot
@@ -107,6 +110,7 @@ surf(xp, yp, zp, reshape(Eplot*g, size(xp)), 'EdgeColor', 'None', 'FaceAlpha', 0
 colormap('parula')
 shading interp
 axis equal;
+view(100.0517, 32.5425)
 
 
 %% Time discretization
@@ -114,7 +118,9 @@ axis equal;
 % Simulation time
 T = 10 ;
 
-x = [-0.753739; -0.237113; 0.919361] ;
+
+x = [0.507234 ; -0.242181; 1.24062] ;
+
 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r')
 
@@ -123,7 +129,7 @@ plot3(x(1), x(2), x(3), 'ro', 'MarkerSize', 8, 'MarkerFaceColor', 'r')
 cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
 t = 0 ;
 res = 1 ; 
-tol = 0.01*dx^2 ;
+tol = 0.01*dx^2;
 
 count = 0 ;
 
@@ -133,7 +139,7 @@ t_stored = 0 ;
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 g_stored = Etemp * g ;
 gavg_stored = Etemp*g ; 
-avg_count = 10 ; 
+avg_count = 5 ; 
 
 
 
@@ -147,20 +153,33 @@ while t < T && res > tol
     if T - t < dt
             dt = T - t ;
     end
-    
+
     %% Explicit Trapezoidal (RK2) time integration
 
-    % Stage 1
-    Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
-    k1 = ( Etemp*[fx, fy, fz] )' ; 
+    res2 = 1 ; 
 
-    % Stage 2
-    xtemp = x + dt*k1 ;
-    Etemp = interp3_matrix(x1d, y1d, z1d, xtemp(1), xtemp(2), xtemp(3), q, band) ; 
-    k2 = ( Etemp*[fx, fy, fz] )' ; 
+    while res2 > pi/10
+        
+        dt = dt/2 ;
 
-    % Update from TVD-RK2
-    x = x + dt*(k1/2 + k2/2) ;        
+        % Stage 1
+        Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+        k1 = ( Etemp*[fx, fy, fz] )' ; 
+    
+        % Stage 2
+        xtemp = x + dt*k1 ;
+        Etemp = interp3_matrix(x1d, y1d, z1d, xtemp(1), xtemp(2), xtemp(3), q, band) ; 
+        k2 = ( Etemp*[fx, fy, fz] )' ; 
+    
+        % Update from TVD-RK2
+        xtemp = xtemp + dt*(k1/2 + k2/2) ;        
+
+        % Compute velocity
+        vec = ( Etemp*[fx, fy, fz] )' ;
+
+        
+    end
+    x = xtemp ; 
 
     %% Final Projection
     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
@@ -189,10 +208,10 @@ while t < T && res > tol
         gavg0 = mean(g_stored(count - avg_count : count-1)) ;
         gavg = mean(g_stored(count - avg_count + 1 : count)) ;
         gavg_stored(count) = gavg ; 
-        res = abs(gavg - gavg0)/max(abs(gavg), 1) ; disp(res)
+        res = abs(gavg - gavg0)/max(abs(gavg), 1) ; 
     end    
 
-
+    disp([t, res])
 end
 
 plot3(x_stored(1,:), x_stored(2,:), x_stored(3,:), 'r-', 'LineWidth', 1.5)
