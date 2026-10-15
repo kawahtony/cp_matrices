@@ -14,7 +14,7 @@ format long
 a = 1.5; % length along z
 b = 1; % length along xy plane
 
-dx = 0.01 ;
+dx = 0.08 ;
 
 x1d = (-2.01:dx:2.01)';
 y1d = x1d;
@@ -137,6 +137,8 @@ x_stored = x ;
 t_stored = 0 ;
 
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+vec0 = (Etemp*[fx, fy, fz])' ;
+
 g_stored = Etemp * g ;
 gavg_stored = Etemp*g ; 
 avg_count = 5 ; 
@@ -158,7 +160,7 @@ while t < T && res > tol
 
     res2 = 1 ; 
 
-    while res2 > pi/10
+    while res2 > pi/4
         
         dt = dt/2 ;
 
@@ -176,6 +178,9 @@ while t < T && res > tol
 
         % Compute velocity
         vec = ( Etemp*[fx, fy, fz] )' ;
+
+        res2 = acos(dot(vec, vec0) / norm(vec) / norm(vec0)) ;
+        disp([t, dt, res2])
 
         
     end
