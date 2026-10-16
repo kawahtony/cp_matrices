@@ -36,7 +36,7 @@ Hx = Emat * (Dxc * H) ;
 Hy = Emat * (Dyc * H) ; 
 Hz = Emat * (Dzc * H) ;
 
-kappa = -1 ; 
+kappa = 1 ; 
 
 fx = kappa*Hx ; 
 fy = kappa*Hy ;
@@ -74,7 +74,6 @@ axis equal
 view(3)
 
 
-
 %% Time discretization
 
 % Simulation time
@@ -82,14 +81,10 @@ T = 20 ;
 
 % Initial location
 
-x = [-1.1044    1.9628   -0.5531]' ; % descent
-% x = [-1.2061; 1.6991; -0.7651] ;
-
-% x = [0.9745    1.5446   -0.5839]' ; % descent
+x = [-1.440318469631602; -2.000699103868541; 0.348006238974235] ;
 
 figure(1) ; 
 plot3(x(1), x(2), x(3), 'ro', 'MarkerFaceColor', 'r')
-
 
 x_stored = [] ; x_stored(:,1) = x ;
 t_stored = 0 ;
@@ -97,15 +92,12 @@ t_stored = 0 ;
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 vec0 = (Etemp*[fx, fy, fz])' ;
 
-H_stored = Etemp*H ;
-Havg_stored = Etemp*H ;
-avg_count = 5  ;
-
+Hval0 = Etemp*H ;
 
 count = 0 ; 
 
 % Initialize CFL condition, time and residual
-cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fy))) ;
+cfl_constant = max(1, max(abs(fx)) + max(abs(fy)) + max(abs(fz))) ;
 t = 0 ;
 res = 1 ; 
 tol = 0.01*dx^2 ;
@@ -144,8 +136,8 @@ while t < T && res > tol
         xtemp = xtemp + dt*(k1/2 + k2/2) ; 
 
         % Check velocity too
+        Etemp = interp3_matrix(x1d, y1d, z1d, xtemp(1), xtemp(2), xtemp(3), q, band) ; 
         vec = ( Etemp*[fx, fy, fz] )' ;
-
         res2 = acos(dot(vec, vec0) / norm(vec) / norm(vec0)) ;
         disp([t, dt, res2])
 
@@ -153,14 +145,13 @@ while t < T && res > tol
 
     x = xtemp ;
 
+
     %% Final Projection
 
     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
     xproj = ( Etemp*[cpx_band, cpy_band, cpz_band] )' ; 
 
-    
-
-    if norm(x - xproj) > dx/sqrt(2) || norm(vec - vec0)/norm(vec0) > dx^2
+    if norm(x - xproj) > dx/sqrt(2) 
         x = xproj ; 
     end
     
@@ -174,18 +165,11 @@ while t < T && res > tol
     t_stored(count) = t ; 
     vec0 = vec ;
 
-    % % Check convergence
-    % if count <= avg_count
-    %     res = 1 ; 
-    % else
-    %     Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
-    %     Hval = Etemp*H ; 
-    %     H_stored(count) = Hval ; 
-    %     Havg0 = mean(H_stored(count - avg_count : count-1)) ;
-    %     Havg = mean(H_stored(count - avg_count + 1 : count)) ;
-    %     res = abs(Havg - Havg0)/max(abs(Havg), 1) ; disp(res)
-    % end    
-    res = norm(x - x0) ;
+    % Check convergence
+    Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+    Hval = Etemp * H ;
+    res = abs(Hval - Hval0) ;
+    Hval0 = Hval ;
 
     % disp([t, res])
 
