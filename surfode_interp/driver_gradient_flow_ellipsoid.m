@@ -14,7 +14,7 @@ format long
 a = 1.5; % length along z
 b = 1; % length along xy plane
 
-dx = 0.08 ;
+dx = 0.01 ;
 
 x1d = (-2.01:dx:2.01)';
 y1d = x1d;
@@ -139,10 +139,7 @@ t_stored = 0 ;
 Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
 vec0 = (Etemp*[fx, fy, fz])' ;
 
-g_stored = Etemp * g ;
-gavg_stored = Etemp*g ; 
-avg_count = 5 ; 
-
+gval0 = Etemp * g ;
 
 
 %% Time stepping
@@ -204,17 +201,10 @@ while t < T && res > tol
 
 
     % Check convergence
-    if count <= avg_count
-        res = 1 ; 
-    else
-        Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
-        gval = Etemp*g ; 
-        g_stored(count) = gval ; 
-        gavg0 = mean(g_stored(count - avg_count : count-1)) ;
-        gavg = mean(g_stored(count - avg_count + 1 : count)) ;
-        gavg_stored(count) = gavg ; 
-        res = abs(gavg - gavg0)/max(abs(gavg), 1) ; 
-    end    
+    Etemp = interp3_matrix(x1d, y1d, z1d, x(1), x(2), x(3), q, band) ;
+    gval = Etemp * g ;
+    res = abs(gval - gval0) ;
+    gval0 = gval ;
 
     disp([t, res])
 end
